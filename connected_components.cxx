@@ -139,6 +139,11 @@ int main(int argc, char *argv[]) {
   std::string input = command.GetValueAsString("infile");
   std::string outdir = command.GetValueAsString("outdir");
 
+  if (!boost::filesystem::exists(input)) {
+    std::cout << "Could not find the input file..." << std::endl;
+    exit(1);
+  }
+
   int minPixel = 1;
   if (command.GetOptionWasSet("minPixel"))
     minPixel = command.GetValueAsInt("minPixel", "minPixel");

@@ -15,7 +15,7 @@ An additional file "/tmp/ples_lpa_mrFLAIR_label.nii" contains all lesions identi
 
 ### Options
 
-You may change the threshold (-t 0.00001) used to binarize the input image. The program is using second maximum threshold value of 100 that cannot be changed. Voxel between the lower and upper threshold are treated as potential lesions.
+You may change the threshold (-t 0.00001) used by the program to initially binarize the input image. The program is using a second maximum threshold value of 100 that cannot be changed. Only voxel values between the lower and upper threshold are treated as potential lesions.
 
 You may filter out lesions that are too small by specifying a threshold (-m 1) for the minimum number of voxel in a single lesion that
 should appear in the output.
@@ -27,12 +27,26 @@ Checkout this repository and build the containerized version:
 > git clone https://github.com/mmiv-center/LesionProject.git
 > cd LesionProject
 > docker build -t connectedcomponents -f Dockerfile .
-> docker run --rm -it connectedcomponents
-Option infile is required but not defined
-Option outdir is required but not defined
+> docker run --rm -it connectedcomponents -h
+Usage : /ConnectedComponents/ConnectedComponents
+ System tags: 
+   [ -v ] or [ -h ]
+      = List options in short format
+   [ -V ] or [ -H ]
+      = List options in long format
+   [ -vxml ] or [ -hxml ] or [ -exportXML ]
+      = List options in xml format for BatchMake
+   [ --xml ]
+      = List options in xml format for Slicer
+   [ -vgad ] or [ -hgad ] or [ -exportGAD ]
+      = List options in Grid Application Description format
+   [ -version ]
+      = return the version number
+   [ -date ]
+      = return the cvs checkout date
  Command tags: 
    [ -t < threshold > ]
-      = Specify the threshold applied to the input to create a mask (0.00001).
+      = Specify the threshold applied to the input to create a mask (0).
    [ -m < minPixel > ]
       = Specify the minimum number of voxel in a lesion (1).
    [ -v ]
