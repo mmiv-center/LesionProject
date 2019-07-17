@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetDescription("ConnectedComponents.");
+  command.SetDescription("Simple ConnectedComponents based on itk.");
   command.AddField("infile", "Input mask", MetaCommand::STRING, true);
   command.AddField("outdir", "Output masks directory", MetaCommand::STRING, true);
 
@@ -192,13 +192,17 @@ int main(int argc, char *argv[]) {
   connected->SetBackgroundValue(0);
   connected->SetInput(filter->GetOutput());
   connected->Update();
+  OutputImageType::Pointer con = connected->GetOutput();
+  con->SetOrigin(imageReader->GetOutput()->GetOrigin());
+  con->SetSpacing(imageReader->GetOutput()->GetSpacing());
+  con->SetDirection(imageReader->GetOutput()->GetDirection());
 
   if (1) { // save the connected components image as a single volume
     typedef itk::ImageFileWriter<OutputImageType> WriterType;
     WriterType::Pointer writer = WriterType::New();
     // check if that directory exists, create before writing
     writer->SetFileName(resultJSON["output_labels"]);
-    writer->SetInput(connected->GetOutput());
+    writer->SetInput(con);
 
     std::cout << "Writing all segments as a single file " << std::endl;
     std::cout << resultJSON["output_labels"] << std::endl << std::endl;
@@ -225,6 +229,10 @@ int main(int argc, char *argv[]) {
     // error case
     fprintf(stderr, "Error: Could not find any lesions using the current set of thresholds\n");
   }
+  resultJSON["voxel_size"] = json::array();
+  resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[0]);
+  resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[1]);
+  resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[2]);
 
   resultJSON["lesions"] = json::array();
   int counter = 0;
@@ -241,10 +249,20 @@ int main(int argc, char *argv[]) {
     lesion["physical_size"] = labelObject->GetPhysicalSize();
     lesion["flatness"] = labelObject->GetFlatness();
     lesion["roundness"] = labelObject->GetRoundness();
+    lesion["perimeter"] = labelObject->GetPerimeter();
     lesion["elongation"] = labelObject->GetElongation();
     lesion["number_pixel_on_border"] = labelObject->GetNumberOfPixelsOnBorder();
     lesion["feret_diameter"] = labelObject->GetFeretDiameter();
     lesion["perimeter_on_border_ratio"] = labelObject->GetPerimeterOnBorderRatio();
+    lesion["centroid"] = json::array();
+    lesion["centroid"].push_back(labelObject->GetCentroid()[0]);
+    lesion["centroid"].push_back(labelObject->GetCentroid()[1]);
+    lesion["centroid"].push_back(labelObject->GetCentroid()[2]);
+    lesion["principal_moments"] = json::array();
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[0]);
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[1]);
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[2]);
+    lesion["equivalent_spherical_radius"] = labelObject->GetEquivalentSphericalRadius();
     totalVolume += labelObject->GetNumberOfPixels();
 
     ImageType::RegionType region = connected->GetOutput()->GetLargestPossibleRegion();
@@ -311,6 +329,9 @@ int main(int argc, char *argv[]) {
     si = si.substr(0, lastdot) + ".json";
 
   o << si;
+  resultJSON["z_comment"] =
+      std::string("jq -r '.lesions | map(.filename), map(.id), map(.num_voxel), map(.flatness), map(.roundness), map(.elongation) | @csv' ") + o.str();
+
   std::ofstream out(o.str());
   out << res;
   out.close();

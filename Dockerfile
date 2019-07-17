@@ -12,6 +12,6 @@ RUN cd /tmp/ \
 
 RUN mkdir /ConnectedComponents && cd /ConnectedComponents/ \
     && git clone https://github.com/mmiv-center/LesionProject.git . \
-    && cmake .
+    && cmake . && make
 
 ENTRYPOINT [ "/ConnectedComponents/ConnectedComponents" ]
