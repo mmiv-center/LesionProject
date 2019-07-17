@@ -318,7 +318,6 @@ int main(int argc, char *argv[]) {
   resultJSON["num_lesions"] = counter;
   resultJSON["total_lesion_size"] = totalVolume;
 
-  std::string res = resultJSON.dump(4) + "\n";
   std::ostringstream o;
   std::string si(resultJSON["output_labels"]);
   si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
@@ -333,6 +332,7 @@ int main(int argc, char *argv[]) {
       std::string("jq -r '.lesions | map(.filename), map(.id), map(.num_voxel), map(.flatness), map(.roundness), map(.elongation) | @csv' ") + o.str();
 
   std::ofstream out(o.str());
+  std::string res = resultJSON.dump(4) + "\n";
   out << res;
   out.close();
 
