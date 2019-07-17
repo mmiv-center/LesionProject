@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
     writer->SetFileName(resultJSON["output_labels"]);
     writer->SetInput(con);
 
-    std::cout << "Writing all segments as a single file " << std::endl;
+    std::cout << "Writing all detected lesions as a single file " << std::endl;
     std::cout << resultJSON["output_labels"] << std::endl << std::endl;
     resultJSON["output_all_lesions"] = resultJSON["output_labels"];
     try {

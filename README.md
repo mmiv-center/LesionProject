@@ -22,9 +22,12 @@ should appear in the output.
 
 ### Create the dockerized version of ConnectedComponents
 
+Checkout this repository and build the containerized version:
 ```
-docker build -t connectedcomponents -f Dockerfile .
-docker run --rm -it connectedcomponents
+> git clone https://github.com/mmiv-center/LesionProject.git
+> cd LesionProject
+> docker build -t connectedcomponents -f Dockerfile .
+> docker run --rm -it connectedcomponents
 Option infile is required but not defined
 Option outdir is required but not defined
  Command tags: 
