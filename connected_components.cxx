@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
   command.AddField("infile", "Input mask", MetaCommand::STRING, true);
   command.AddField("outdir", "Output masks directory", MetaCommand::STRING, true);
 
-  command.SetOption("Threshold", "t", false, "Specify the threshold applied to the input to create a mask (0).");
+  command.SetOption("Threshold", "t", false, "Specify the threshold applied to the input to create a mask (0.00001).");
   command.AddOptionField("Threshold", "threshold", MetaCommand::FLOAT, true);
 
   command.SetOption("minPixel", "m", false, "Specify the minimum number of voxel in a lesion (1).");
