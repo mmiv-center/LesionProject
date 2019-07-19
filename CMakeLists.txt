@@ -36,3 +36,6 @@ endif()
 
 add_executable(ConnectedComponents connected_components.cxx )
 target_link_libraries(ConnectedComponents  ${ITK_LIBRARIES} ${Boost_LIBRARIES})
+
+add_executable(InPainting inpainting.cxx )
+target_link_libraries(InPainting ${ITK_LIBRARIES} ${Boost_LIBRARIES})
