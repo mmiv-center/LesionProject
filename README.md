@@ -57,3 +57,13 @@ Usage : /ConnectedComponents/ConnectedComponents
    < outdir > 
       = Output masks directory
 ```
+
+## InPainting
+
+After detecting lesions in-painting can be used to synthetically create a version of the raw data were lesions
+are masked with assumed intensity values similar to the neighboring voxel in the data. Such synthetic data can be
+used for algorithms that are sensitive to the lesions otherwise - such as FreeSurfer.
+
+The provided algorithm performs a region growing of initially 2 voxel to create a lesion border. This border might
+be affected by partial volume effect. Afterwards another 2 voxel morphological grow operation defines a region of
+background voxel used for the interpolation of the lesion and the lesion border voxel intensities.
