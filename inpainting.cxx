@@ -172,19 +172,19 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetDescription("InPainting an intensity image to fill in values in small islands defined in a binary mask. The voxel from which intensities are sampled can be specified by another (white matter) mask image.");
+  command.SetDescription("InPainting an intensity image to fill in values in small islands defined in a binary mask. The allowed voxel from which intensities are sampled can be specified by another (white matter) mask image.");
   command.AddField("imagefile", "Input intensity volume", MetaCommand::STRING, true);
   command.AddField("lesionfile", "Input lesion volume", MetaCommand::STRING, true);
-  command.AddField("outdir", "Output masks directory", MetaCommand::STRING, true);
+  command.AddField("outdir", "Output directory for in-painted volume", MetaCommand::STRING, true);
 
 
   command.SetOption("maskfile", "m", false, "Input mask volume for white matter");
   command.AddOptionField("maskfile", "maskfile", MetaCommand::STRING, true);
 
-  command.SetOption("borderPixel", "b", false, "Specify a border in pixel around the lesion (2).");
+  command.SetOption("borderPixel", "b", false, "Specify a border in pixel around the lesion (2). No voxel from this perimeter will be sampled.");
   command.AddOptionField("borderPixel", "borderPixel", MetaCommand::INT, true);
 
-  command.SetOption("Verbose", "v", false, "Print more verbose output");
+  command.SetOption("Verbose", "V", false, "Print more verbose output");
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -226,9 +226,9 @@ int main(int argc, char *argv[]) {
   size_t lastdot = fn.find_last_of(".");
   std::string output_filename;
   if (lastdot == std::string::npos)
-    output_filename = fn + "_label.nii";
+    output_filename = fn + "_inpainted.nii";
   else
-    output_filename = fn.substr(0, lastdot) + "_label.nii";
+    output_filename = fn.substr(0, lastdot) + "_inpainted.nii";
 
   resultJSON["output_labels"] = outdir + "/" + output_filename;
 
@@ -250,6 +250,9 @@ int main(int argc, char *argv[]) {
 
   MaskReaderType::Pointer whiteMatterReader = MaskReaderType::New();
   if (command.GetOptionWasSet("mask")) {
+    if (verbose) {
+      fprintf(stdout, "read the white matter mask...\n");
+    }
       whiteMatterReader->SetFileName(mask_filename);
       whiteMatterReader->Update();
   }
@@ -265,24 +268,6 @@ int main(int argc, char *argv[]) {
   con->SetSpacing(imageReader->GetOutput()->GetSpacing());
   con->SetDirection(imageReader->GetOutput()->GetDirection());
 
-  if (0) { // save the connected components image as a single volume
-    typedef itk::ImageFileWriter<MaskImageType> WriterType;
-    WriterType::Pointer writer = WriterType::New();
-    // check if that directory exists, create before writing
-    writer->SetFileName(resultJSON["output_labels"]);
-    writer->SetInput(con);
-
-    std::cout << "Writing all detected lesions as a single file " << std::endl;
-    std::cout << resultJSON["output_labels"] << std::endl << std::endl;
-    resultJSON["output_all_lesions"] = resultJSON["output_labels"];
-    try {
-      writer->Update();
-    } catch (itk::ExceptionObject &ex) {
-      std::cout << ex << std::endl;
-      return EXIT_FAILURE;
-    }
-  }
-
   // using LabelType = unsigned short;
   using ShapeLabelObjectType = itk::ShapeLabelObject<MaskPixelType, ImageDimension>;
   using LabelMapType = itk::LabelMap<ShapeLabelObjectType>;
@@ -295,7 +280,7 @@ int main(int argc, char *argv[]) {
   LabelMapType *labelMap = label->GetOutput();
   if (labelMap->GetNumberOfLabelObjects() == 0) {
     // error case
-    fprintf(stderr, "Error: Could not find any lesions using the current set of thresholds\n");
+    fprintf(stderr, "Error: Could not find any lesions in the lesion input.\n");
   }
   resultJSON["voxel_size"] = json::array();
   resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[0]);
@@ -447,12 +432,13 @@ int main(int argc, char *argv[]) {
     while (!maskIterator11.IsAtEnd() && !imageIterator33.IsAtEnd()) {
       if (maskIterator11.Get() == 1) { // the inner mask
         index = maskIterator11.GetIndex();
-        float val = pointValue(index[0], index[1], index[2], 2.0, 0.1, xv, yv, zv, iv);
+        float val = pointValue(index[0], index[1], index[2], 5.0, 0.01, xv, yv, zv, iv);
         imageIterator33.Set(val);
       }
       ++maskIterator11;
       ++imageIterator33;
     }
+    resultJSON["lesions"].push_back(lesion);
     counter++;
   }
   resultJSON["num_lesions"] = counter;
