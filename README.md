@@ -75,5 +75,7 @@ summary lesion field (each lesion is encoded using a whole number > 0):
 ```
 Or using the docker container from above
 ```
-docker run --rm -it connectedcomponents --entrypoint "/ConnectedComponents/InPainting" OFAMS00001/T1.nii /tmp/ples_lpa_mrFLAIR_label.nii /tmp/
+docker run --rm -it --entrypoint "/ConnectedComponents/InPainting" connectedcomponents OFAMS00001/T1.nii /tmp/ples_lpa_mrFLAIR_label.nii /tmp/
 ```
+
+For lesions that are close to the border of white matter the interpolation might not be correct as it would blurr intensities from different tissue types across the lesion volume. Instead it might be more appropriate to limit the intensities for interpolation to the voxel of a single material. For these pusposes you can provide an additional mask argument - limiting the sample points for the interpolation to the white matter material only.
