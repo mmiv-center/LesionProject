@@ -74,86 +74,85 @@
 
 //#include "itkGDCMImageIO.h"
 
-float pointValue(float x, float y, float z, float power, float smoothing, std::vector<int> xv, std::vector<int> yv, std::vector<int> zv, std::vector<float> values) {
+float pointValue(float x, float y, float z, float power, float smoothing, std::vector<int> xv, std::vector<int> yv, std::vector<int> zv,
+                 std::vector<float> values) {
   float nominator = 0.0f;
   float denominator = 0.0f;
   for (int i = 0; i < values.size(); i++) {
-    float dist = sqrt( (x-xv[i])*(x-xv[i]) + (y-yv[i])*(y-yv[i]) + (z-zv[i])*(z-zv[i]) + smoothing*smoothing);
-    if (dist<0.0000000001)
-      return values[i];  
-    nominator = nominator+(values[i]/pow(dist,power));
-    denominator = denominator+(1.0/pow(dist,power));
+    float dist = sqrt((x - xv[i]) * (x - xv[i]) + (y - yv[i]) * (y - yv[i]) + (z - zv[i]) * (z - zv[i]) + smoothing * smoothing);
+    if (dist < 0.0000000001)
+      return values[i];
+    nominator = nominator + (values[i] / pow(dist, power));
+    denominator = denominator + (1.0 / pow(dist, power));
   }
   float value = 0.0f;
-  if (denominator > 0)  
-    value = nominator/denominator;  
+  if (denominator > 0)
+    value = nominator / denominator;
   else
     value = -9999;
   return value;
 }
 
-/* 
-from math import pow  
-from math import sqrt  
-import numpy as np  
-import matplotlib.pyplot as plt  
+/*
+from math import pow
+from math import sqrt
+import numpy as np
+import matplotlib.pyplot as plt
 
-def pointValue(x,y,power,smoothing,xv,yv,values):  
-    nominator=0  
-    denominator=0  
-    for i in range(0,len(values)):  
-        dist = sqrt((x-xv[i])*(x-xv[i])+(y-yv[i])*(y-yv[i])+smoothing*smoothing);  
-        #If the point is really close to one of the data points, return the data point value to avoid singularities  
-        if(dist<0.0000000001):  
-            return values[i]  
-        nominator=nominator+(values[i]/pow(dist,power))  
-        denominator=denominator+(1/pow(dist,power))  
-    #Return NODATA if the denominator is zero  
-    if denominator > 0:  
-        value = nominator/denominator  
-    else:  
-        value = -9999  
-    return value  
+def pointValue(x,y,power,smoothing,xv,yv,values):
+    nominator=0
+    denominator=0
+    for i in range(0,len(values)):
+        dist = sqrt((x-xv[i])*(x-xv[i])+(y-yv[i])*(y-yv[i])+smoothing*smoothing);
+        #If the point is really close to one of the data points, return the data point value to avoid singularities
+        if(dist<0.0000000001):
+            return values[i]
+        nominator=nominator+(values[i]/pow(dist,power))
+        denominator=denominator+(1/pow(dist,power))
+    #Return NODATA if the denominator is zero
+    if denominator > 0:
+        value = nominator/denominator
+    else:
+        value = -9999
+    return value
 
-def invDist(xv,yv,values,xsize=100,ysize=100,power=2,smoothing=0):  
-    valuesGrid = np.zeros((ysize,xsize))  
-    for x in range(0,xsize):  
-        for y in range(0,ysize):  
-            valuesGrid[y][x] = pointValue(x,y,power,smoothing,xv,yv,values)  
-    return valuesGrid  
-
-
-if __name__ == "__main__":  
-    power=1  
-    smoothing=20  
-
-    #Creating some data, with each coodinate and the values stored in separated lists  
-    xv = [10,60,40,70,10,50,20,70,30,60]  
-    yv = [10,20,30,30,40,50,60,70,80,90]  
-    values = [1,2,2,3,4,6,7,7,8,10]  
-
-    #Creating the output grid (100x100, in the example)  
-    ti = np.linspace(0, 100, 100)  
-    XI, YI = np.meshgrid(ti, ti)  
-
-    #Creating the interpolation function and populating the output matrix value  
-    ZI = invDist(xv,yv,values,100,100,power,smoothing)  
+def invDist(xv,yv,values,xsize=100,ysize=100,power=2,smoothing=0):
+    valuesGrid = np.zeros((ysize,xsize))
+    for x in range(0,xsize):
+        for y in range(0,ysize):
+            valuesGrid[y][x] = pointValue(x,y,power,smoothing,xv,yv,values)
+    return valuesGrid
 
 
-    # Plotting the result  
-    n = plt.normalize(0.0, 100.0)  
-    plt.subplot(1, 1, 1)  
-    plt.pcolor(XI, YI, ZI)  
-    plt.scatter(xv, yv, 100, values)  
-    plt.title('Inv dist interpolation - power: ' + str(power) + ' smoothing: ' + str(smoothing))  
-    plt.xlim(0, 100)  
-    plt.ylim(0, 100)  
-    plt.colorbar()  
+if __name__ == "__main__":
+    power=1
+    smoothing=20
 
-    plt.show() 
+    #Creating some data, with each coodinate and the values stored in separated lists
+    xv = [10,60,40,70,10,50,20,70,30,60]
+    yv = [10,20,30,30,40,50,60,70,80,90]
+    values = [1,2,2,3,4,6,7,7,8,10]
+
+    #Creating the output grid (100x100, in the example)
+    ti = np.linspace(0, 100, 100)
+    XI, YI = np.meshgrid(ti, ti)
+
+    #Creating the interpolation function and populating the output matrix value
+    ZI = invDist(xv,yv,values,100,100,power,smoothing)
+
+
+    # Plotting the result
+    n = plt.normalize(0.0, 100.0)
+    plt.subplot(1, 1, 1)
+    plt.pcolor(XI, YI, ZI)
+    plt.scatter(xv, yv, 100, values)
+    plt.title('Inv dist interpolation - power: ' + str(power) + ' smoothing: ' + str(smoothing))
+    plt.xlim(0, 100)
+    plt.ylim(0, 100)
+    plt.colorbar()
+
+    plt.show()
     */
-
-
 
 //#include "itkMetaDataDictionary.h"
 #include "json.hpp"
@@ -172,11 +171,11 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetDescription("InPainting an intensity image to fill in values in small islands defined in a binary mask. The allowed voxel from which intensities are sampled can be specified by another (white matter) mask image.");
+  command.SetDescription("InPainting an intensity image to fill in values in small islands defined in a binary mask. The allowed voxel from which intensities "
+                         "are sampled can be specified by another (white matter) mask image.");
   command.AddField("imagefile", "Input intensity volume", MetaCommand::STRING, true);
   command.AddField("lesionfile", "Input lesion volume", MetaCommand::STRING, true);
   command.AddField("outdir", "Output directory for in-painted volume", MetaCommand::STRING, true);
-
 
   command.SetOption("maskfile", "m", false, "Input mask volume for white matter");
   command.AddOptionField("maskfile", "maskfile", MetaCommand::STRING, true);
@@ -253,8 +252,8 @@ int main(int argc, char *argv[]) {
     if (verbose) {
       fprintf(stdout, "read the white matter mask...\n");
     }
-      whiteMatterReader->SetFileName(mask_filename);
-      whiteMatterReader->Update();
+    whiteMatterReader->SetFileName(mask_filename);
+    whiteMatterReader->Update();
   }
 
   typedef itk::ConnectedComponentImageFilter<MaskImageType, MaskImageType> ConnectedComponentImageFilterType;
@@ -280,7 +279,7 @@ int main(int argc, char *argv[]) {
   LabelMapType *labelMap = label->GetOutput();
   if (labelMap->GetNumberOfLabelObjects() == 0) {
     // error case
-    fprintf(stderr, "Error: Could not find any lesions in the lesion input.\n");
+    fprintf(stderr, "Error: Could not find any lesions in the lesion input. Lesions intensities are supposed to be whole numbers - not floating point.\n");
   }
 
   // do the inpainting in this volume
@@ -296,10 +295,10 @@ int main(int argc, char *argv[]) {
   size_t totalVolume = 0;
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
     if (verbose) {
-      fprintf(stdout, "process %d of %d lesions...\n", n, labelMap->GetNumberOfLabelObjects());
+      fprintf(stdout, "process %u of %ld lesions...\n", n, labelMap->GetNumberOfLabelObjects());
     }
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n);
-    //if (labelObject->GetNumberOfPixels() < minPixel)
+    // if (labelObject->GetNumberOfPixels() < minPixel)
     //  continue; // ignore this region
     // labelObject->GetNumberOfPixels()
     json lesion;
@@ -397,7 +396,7 @@ int main(int argc, char *argv[]) {
     // type.
     itk::ImageRegionIterator<MaskImageType> whiteMatterMaskIterator;
     if (command.GetOptionWasSet("mask")) {
-      whiteMatterMaskIterator = itk::ImageRegionIterator<MaskImageType> (whiteMatterReader->GetOutput(), region);
+      whiteMatterMaskIterator = itk::ImageRegionIterator<MaskImageType>(whiteMatterReader->GetOutput(), region);
     }
     itk::ImageRegionIterator<MaskImageType> maskIterator1(m, region);
     itk::ImageRegionIterator<MaskImageType> maskIterator2(m2, region);
@@ -413,8 +412,8 @@ int main(int argc, char *argv[]) {
       bool bail = false;
       if (command.GetOptionWasSet("mask")) {
         if (whiteMatterMaskIterator.Get() == 0)
-            // don't use this voxel 
-            bail = true;
+          // don't use this voxel
+          bail = true;
       }
       if (maskIterator2.Get() == 1 && maskIterator1.Get() == 0 && !bail) {
         // where are we?
@@ -452,28 +451,28 @@ int main(int argc, char *argv[]) {
   resultJSON["total_lesion_size"] = totalVolume;
 
   if (1) { // save output image as nifti again
-      typedef itk::ImageFileWriter<ImageType> WriterType;
-      WriterType::Pointer writer = WriterType::New();
-      // check if that directory exists, create before writing
-      std::string fn = resultJSON["output_volume"];
-      size_t lastdot = fn.find_last_of(".");
-      std::string filename("");
-      if (lastdot == std::string::npos)
-        filename = fn + ".nii.gz";
-      else
-        filename = fn.substr(0, lastdot) + ".nii.gz";
+    typedef itk::ImageFileWriter<ImageType> WriterType;
+    WriterType::Pointer writer = WriterType::New();
+    // check if that directory exists, create before writing
+    std::string fn = resultJSON["output_volume"];
+    size_t lastdot = fn.find_last_of(".");
+    std::string filename("");
+    if (lastdot == std::string::npos)
+      filename = fn + ".nii.gz";
+    else
+      filename = fn.substr(0, lastdot) + ".nii.gz";
 
-      writer->SetFileName(filename);
-      writer->SetInput(outimg);
+    writer->SetFileName(filename);
+    writer->SetInput(outimg);
 
-      std::cout << "Writing output " << std::endl;
-      std::cout << " to " << filename << std::endl;
-      try {
-        writer->Update();
-      } catch (itk::ExceptionObject &ex) {
-        std::cout << ex << std::endl;
-        return EXIT_FAILURE;
-      }
+    std::cout << "Writing output " << std::endl;
+    std::cout << " to " << filename << std::endl;
+    try {
+      writer->Update();
+    } catch (itk::ExceptionObject &ex) {
+      std::cout << ex << std::endl;
+      return EXIT_FAILURE;
+    }
   }
 
   std::ostringstream o;

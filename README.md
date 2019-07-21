@@ -67,3 +67,13 @@ used for algorithms that are sensitive to the lesions otherwise - such as FreeSu
 The provided algorithm performs a region growing of initially 2 voxel to create a lesion border. This border might
 be affected by partial volume effect. Afterwards another 2 voxel morphological grow operation defines a region of
 background voxel used for the interpolation of the lesion and the lesion border voxel intensities.
+
+Using the above ConnectedComponents example we an perform a T1.nii InPainting using the output
+summary lesion field (each lesion is encoded using a whole number > 0):
+```
+./InPainting OFAMS00001/T1.nii /tmp/ples_lpa_mrFLAIR_label.nii /tmp/
+```
+Or using the docker container from above
+```
+docker run --rm -it connectedcomponents --entrypoint "/ConnectedComponents/InPainting" OFAMS00001/T1.nii /tmp/ples_lpa_mrFLAIR_label.nii /tmp/
+```
