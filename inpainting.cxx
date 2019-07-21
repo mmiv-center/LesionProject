@@ -78,11 +78,11 @@ float pointValue(float x, float y, float z, float power, float smoothing, std::v
   float nominator = 0.0f;
   float denominator = 0.0f;
   for (int i = 0; i < values.size(); i++) {
-    float dist = sqrt( (x-xv[i])*(x-xv[i]) + (y-yv[i])*(y-yv[i]) + (z-zv[i])*(z-zv[i])   +smoothing*smoothing);
+    float dist = sqrt( (x-xv[i])*(x-xv[i]) + (y-yv[i])*(y-yv[i]) + (z-zv[i])*(z-zv[i]) + smoothing*smoothing);
     if (dist<0.0000000001)
       return values[i];  
     nominator = nominator+(values[i]/pow(dist,power));
-    denominator = denominator+(1/pow(dist,power));
+    denominator = denominator+(1.0/pow(dist,power));
   }
   float value = 0.0f;
   if (denominator > 0)  
@@ -230,7 +230,7 @@ int main(int argc, char *argv[]) {
   else
     output_filename = fn.substr(0, lastdot) + "_inpainted.nii";
 
-  resultJSON["output_labels"] = outdir + "/" + output_filename;
+  resultJSON["output_volume"] = outdir + "/" + output_filename;
 
   constexpr unsigned int ImageDimension = 3;
   using PixelType = float;
@@ -282,15 +282,22 @@ int main(int argc, char *argv[]) {
     // error case
     fprintf(stderr, "Error: Could not find any lesions in the lesion input.\n");
   }
+
+  // do the inpainting in this volume
+  ImageType::Pointer outimg = imageReader->GetOutput();
+
   resultJSON["voxel_size"] = json::array();
-  resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[0]);
-  resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[1]);
-  resultJSON["voxel_size"].push_back(imageReader->GetOutput()->GetSpacing()[2]);
+  resultJSON["voxel_size"].push_back(outimg->GetSpacing()[0]);
+  resultJSON["voxel_size"].push_back(outimg->GetSpacing()[1]);
+  resultJSON["voxel_size"].push_back(outimg->GetSpacing()[2]);
 
   resultJSON["lesions"] = json::array();
   int counter = 0;
   size_t totalVolume = 0;
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
+    if (verbose) {
+      fprintf(stdout, "process %d of %d lesions...\n", n, labelMap->GetNumberOfLabelObjects());
+    }
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n);
     //if (labelObject->GetNumberOfPixels() < minPixel)
     //  continue; // ignore this region
@@ -428,7 +435,7 @@ int main(int argc, char *argv[]) {
     // now we should interpolate and write the values back to the input image
     // before saving that again as the only output
     itk::ImageRegionIterator<MaskImageType> maskIterator11(m, region);
-    itk::ImageRegionIterator<ImageType> imageIterator33(imageReader->GetOutput(), region);
+    itk::ImageRegionIterator<ImageType> imageIterator33(outimg, region);
     while (!maskIterator11.IsAtEnd() && !imageIterator33.IsAtEnd()) {
       if (maskIterator11.Get() == 1) { // the inner mask
         index = maskIterator11.GetIndex();
@@ -448,7 +455,7 @@ int main(int argc, char *argv[]) {
       typedef itk::ImageFileWriter<ImageType> WriterType;
       WriterType::Pointer writer = WriterType::New();
       // check if that directory exists, create before writing
-      std::string fn = resultJSON["output_labels"];
+      std::string fn = resultJSON["output_volume"];
       size_t lastdot = fn.find_last_of(".");
       std::string filename("");
       if (lastdot == std::string::npos)
@@ -457,7 +464,7 @@ int main(int argc, char *argv[]) {
         filename = fn.substr(0, lastdot) + ".nii.gz";
 
       writer->SetFileName(filename);
-      writer->SetInput(imageReader->GetOutput());
+      writer->SetInput(outimg);
 
       std::cout << "Writing output " << std::endl;
       std::cout << " to " << filename << std::endl;
@@ -470,7 +477,7 @@ int main(int argc, char *argv[]) {
   }
 
   std::ostringstream o;
-  std::string si(resultJSON["output_labels"]);
+  std::string si(resultJSON["output_volume"]);
   si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
   lastdot = si.find_last_of(".");
   if (lastdot == std::string::npos)
