@@ -79,3 +79,9 @@ docker run --rm -it --entrypoint "/ConnectedComponents/InPainting" connectedcomp
 ```
 
 For lesions that are close to the border of white matter the interpolation might not be correct as it would blurr intensities from different tissue types across the lesion volume. Instead it might be more appropriate to limit the intensities for interpolation to the voxel of a single material. For these pusposes you can provide an additional mask argument - limiting the sample points for the interpolation to the white matter material only.
+
+## Lesion distance measures
+
+In order to quantify the location of a lesion relative to the cortical surface an approach can be used that calculates curvilinear (geodesic) distances between two labels, the ventricles located in the center of the brain and the cortical gray to white matter surface. This approach mimics the general direction of the path neurons travel during cortex development.
+
+Please visit the https://github.com/mmiv-center/HeatEquation project that implements such a method.
