@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
   command.SetOption("maskfile", "m", false, "Input mask volume for white matter");
   command.AddOptionField("maskfile", "maskfile", MetaCommand::STRING, true);
 
-  command.SetOption("borderPixel", "b", false, "Specify a border in pixel around the lesion (2). No voxel from this perimeter will be sampled.");
+  command.SetOption("borderPixel", "b", false, "Specify a border in pixel around the lesion (1). No voxel from this perimeter will be sampled.");
   command.AddOptionField("borderPixel", "borderPixel", MetaCommand::INT, true);
 
   command.SetOption("Verbose", "V", false, "Print more verbose output");
@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  int borderPixel = 2;
+  int borderPixel = 1;
   if (command.GetOptionWasSet("borderPixel"))
     borderPixel = command.GetValueAsInt("borderPixel", "borderPixel");
 

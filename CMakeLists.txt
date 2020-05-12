@@ -15,6 +15,13 @@ SET(CMAKE_CXX_FLAGS "-std=c++0x")
 #SET(CMAKE_CXX_FLAGS "-std=c++11")
 #SET(CMAKE_CXX_FLAGS "-std=c++98")
 
+IF(LINUX)
+   SET(CMAKE_CXX_FLAGS "-std=c++11")
+ELSE()
+   # find the correct path for isysroot with `xcrun --show-sdk-path`
+   SET(CMAKE_CXX_FLAGS "-std=c++11 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")
+ENDIF()
+
 project(ConnectedComponents)
 
   FIND_PACKAGE(ITK)
@@ -36,6 +43,9 @@ endif()
 
 add_executable(ConnectedComponents connected_components.cxx )
 target_link_libraries(ConnectedComponents  ${ITK_LIBRARIES} ${Boost_LIBRARIES})
+
+add_executable(MatchPair match_pair.cxx )
+target_link_libraries(MatchPair  ${ITK_LIBRARIES} ${Boost_LIBRARIES})
 
 add_executable(InPainting inpainting.cxx )
 target_link_libraries(InPainting ${ITK_LIBRARIES} ${Boost_LIBRARIES})

@@ -1,6 +1,6 @@
 ## Identifying Lesions
 
-Assume we have example data in OFAMS00001/ples_lpa_mrFLAIR.nii which is floating point with some probability values per voxel. The value 0 represents the background. Values larger than 0 represent voxel that are part of a lesion.
+Assume we have example data in OFAMS00001/ples_lpa_mrFLAIR.nii which is floating point with some probability value per voxel. The value 0 represents the background. Values larger than 0 represent voxel that are part of a lesion.
 
 The call
 ```
