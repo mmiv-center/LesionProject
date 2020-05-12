@@ -72,6 +72,7 @@
 //#include "itkMetaDataDictionary.h"
 #include "json.hpp"
 #include "metaCommand.h"
+#include <algorithm>
 #include <boost/filesystem.hpp>
 #include <map>
 #include <math.h>
@@ -138,6 +139,9 @@ int main(int argc, char *argv[]) {
   command.SetOption("minPixel", "m", false, "Specify the minimum number of voxel in a lesion (1).");
   command.AddOptionField("minPixel", "minPixel", MetaCommand::INT, true);
 
+  command.SetOption("PatientID", "i", false, "Provide a patient id used in the result spreadsheet as ID.");
+  command.AddOptionField("PatientID", "patientid", MetaCommand::STRING, true);
+
   command.SetOption("Verbose", "v", false, "Print more verbose output");
 
   if (!command.Parse(argc, argv)) {
@@ -155,6 +159,12 @@ int main(int argc, char *argv[]) {
   if (!boost::filesystem::exists(moving)) {
     std::cout << "Could not find the moving file..." << std::endl;
     exit(1);
+  }
+
+  std::string PatientID = "";
+  if (command.GetOptionWasSet("PatientID")) {
+    PatientID = command.GetValueAsString("PatientID", "patientid");
+    fprintf(stdout, "got a patient id %s\n", PatientID.c_str());
   }
 
   int minPixel = 1;
@@ -586,7 +596,7 @@ int main(int argc, char *argv[]) {
   registration->SetMetric(metric);
   registration->SetOptimizer(optimizer);
   registration->SetTransform(transform);
-  fprintf(stdout, "we have %lu x %lu points\n", fixedPointSet->GetNumberOfPoints(), movingPointSet->GetNumberOfPoints());
+  fprintf(stdout, "we have %lu in fixed, %lu points moving\n", fixedPointSet->GetNumberOfPoints(), movingPointSet->GetNumberOfPoints());
   registration->SetFixedPointSet(fixedPointSet);
   registration->SetMovingPointSet(movingPointSet);
   try {
@@ -608,7 +618,8 @@ int main(int argc, char *argv[]) {
   // pointsB2      0        1  ...
   // mapping points in moving to space of fixed using the transform
   if (1) { // debugging, safe two landmark sets for Amira after transformation
-    FILE *fp = fopen("LandmarkSet_fixed.am", "w");
+    std::string out_file = outdir + "/LandmarkSet_fixed.am";
+    FILE *fp = fopen(out_file.c_str(), "w");
     if (fp != NULL) {
       fprintf(fp, "# HyperMesh 3D ASCII 1.0\n\ndefine Markers %lu\n\nParameters {\n   ContentType \"LandmarkSet\",\n   NumSets 1 }\n\n",
               fixedPointSet->GetNumberOfPoints());
@@ -623,7 +634,8 @@ int main(int argc, char *argv[]) {
       fclose(fp);
     }
 
-    fp = fopen("LandmarkSet_moving.am", "w");
+    out_file = outdir + "/LandmarkSet_moving.am";
+    fp = fopen(out_file.c_str(), "w");
     if (fp != NULL) {
       fprintf(fp, "# HyperMesh 3D ASCII 1.0\n\ndefine Markers %lu\n\nParameters {\n   ContentType \"LandmarkSet\",\n   NumSets 2 }\n\n",
               movingPointSet->GetNumberOfPoints());
@@ -651,16 +663,17 @@ int main(int argc, char *argv[]) {
   // this is using the index of the points in fixedPointSet and movingPointSet after transform
   class MatchInfo {
   public:
-    int idxFixed;  // index
-    int idxMoving; // index
-    double distance;
-    int label;
+    std::vector<int> idxFixed;  // index
+    std::vector<int> idxMoving; // index
+    std::vector<double> distance;
+    std::vector<int> label;
     MatchInfo(int a, int b, double c, int d) {
-      idxFixed = a;
-      idxMoving = b;
-      distance = c;
-      label = d;
+      idxFixed.push_back(a);
+      idxMoving.push_back(b);
+      distance.push_back(c);
+      label.push_back(d);
     }
+    MatchInfo(){};
   };
   std::vector<MatchInfo *> mappedPoints; // index is id in fixed, value is id in moving (after transform)
   std::vector<MatchInfo *> newPoints;
@@ -690,7 +703,7 @@ int main(int argc, char *argv[]) {
   double mean = 0.0;
   double std = 0.0;
   for (int i = 0; i < mappedPoints.size(); i++) {
-    mean += mappedPoints[i]->distance;
+    mean += mappedPoints[i]->distance[0];
   }
   if (mappedPoints.size() > 0)
     mean /= mappedPoints.size();
@@ -698,7 +711,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Giving up, not enough points...\n");
   }
   for (int i = 0; i < mappedPoints.size(); i++) {
-    std += (mappedPoints[i]->distance - mean) * (mappedPoints[i]->distance - mean);
+    std += (mappedPoints[i]->distance[0] - mean) * (mappedPoints[i]->distance[0] - mean);
   }
   if (mappedPoints.size() > 1)
     std /= (mappedPoints.size() - 1);
@@ -711,10 +724,10 @@ int main(int argc, char *argv[]) {
   std::vector<MatchInfo *>::iterator it = mappedPoints.begin();
   int count = 0;
   while (it != mappedPoints.end()) {
-    if (fabs((*it)->distance - mean) > 3 * std) {
-      fprintf(stdout, "found an outlier at position %d (distance %f > 3*std %f)\n", count, fabs((*it)->distance - mean), 3 * std);
+    if (fabs((*it)->distance[0] - mean) > 3 * std) {
+      fprintf(stdout, "found an outlier at position %d (distance %f > 3*std %f)\n", count, fabs((*it)->distance[0] - mean), 3 * std);
       // move this outlier to the missing points array
-      missingPoints.push_back(new MatchInfo((*it)->idxFixed, -1, (*it)->distance, (*it)->label));
+      missingPoints.push_back(new MatchInfo((*it)->idxFixed[0], -1, (*it)->distance[0], (*it)->label[0]));
       it = mappedPoints.erase(it);
       count++;
       continue;
@@ -727,7 +740,7 @@ int main(int argc, char *argv[]) {
     bool found = false;
     std::vector<MatchInfo *>::iterator it = mappedPoints.begin();
     while (it != mappedPoints.end()) {
-      if ((*it)->idxMoving == j) {
+      if ((*it)->idxMoving[0] == j) {
         // fprintf(stdout, "found a point %d %d\n", j, (*it)->idxMoving);
         found = true;
       }
@@ -735,7 +748,7 @@ int main(int argc, char *argv[]) {
     }
     it = missingPoints.begin();
     while (it != missingPoints.end()) {
-      if ((*it)->idxMoving == j) {
+      if ((*it)->idxMoving[0] == j) {
         found = true;
       }
       ++it;
@@ -751,38 +764,51 @@ int main(int argc, char *argv[]) {
     std::set<int> fixedPoints; // this is for the mappedPoints[i].idxMoving
     int idxMoving = i;
     for (int j = 0; j < mappedPoints.size(); j++) {
-      if (mappedPoints[j]->idxMoving == idxMoving)
-        fixedPoints.insert(mappedPoints[j]->idxFixed);
+      if (mappedPoints[j]->idxMoving[0] == idxMoving)
+        fixedPoints.insert(mappedPoints[j]->idxFixed[0]);
     }
     if (fixedPoints.size() > 1) {
-      fprintf(stdout, "Found a list of fixed points that map to the same moving point...\n");
+      fprintf(stdout, "Found a list of fixed points that map to the same moving point...\n  ");
       std::set<int>::iterator it = fixedPoints.begin();
+      std::vector<int> fpp;
+      std::vector<double> dists;
+      std::vector<int> labels;
       while (it != fixedPoints.end()) {
-        fprintf(stdout, "  %d -> %d, ", (*it), idxMoving);
+        fprintf(stdout, "%d, ", (*it));
+        fpp.push_back((*it));
+        dists.push_back(-1);
+        labels.push_back(-1);
         ++it;
       }
-      fprintf(stdout, "\n");
+      MatchInfo *p = new MatchInfo();
+      p->idxFixed = fpp;
+      p->idxMoving.push_back(idxMoving);
+      p->distance = dists;
+      p->label = labels;
+      mergedPoints.push_back(p);
+      fprintf(stdout, "-> %d\n", idxMoving);
     }
   }
 
-  fprintf(stdout, "Summary: %lu points mapped, %lu points too far away (outliers), %lu new points in moving\n", mappedPoints.size(), missingPoints.size(),
-          newPoints.size());
+  fprintf(stdout, "Summary: %lu points mapped, %lu points too far away (outliers), %lu new points in moving, %lu merged points\n", mappedPoints.size(),
+          missingPoints.size(), newPoints.size(), mergedPoints.size());
   if (1) { // debug the mapping
-    FILE *fp = fopen("LandmarkSet_matched.am", "w");
+    std::string out_file = outdir + "/LandmarkSet_matched.am";
+    FILE *fp = fopen(out_file.c_str(), "w");
     if (fp != NULL) {
       fprintf(fp, "# HyperMesh 3D ASCII 1.0\n\ndefine Markers %lu\n\nParameters {\n   ContentType \"LandmarkSet\",\n   NumSets 2 }\n\n", mappedPoints.size());
       fprintf(fp, "Markers { float[3] Coordinates } @1\n");
       fprintf(fp, "Markers { float[3] Coordinates2 } @2\n\n");
       fprintf(fp, "# Data section follows\n\n@1\n");
       for (int i = 0; i < mappedPoints.size(); i++) {
-        int idx = mappedPoints[i]->idxFixed;
+        int idx = mappedPoints[i]->idxFixed[0];
         PointType fPoint;
         fixedPointSet->GetPoint(idx, &fPoint);
         fprintf(fp, "%f %f %f\n", fPoint[0], fPoint[1], fPoint[2]);
       }
       fprintf(fp, "\n@2\n");
       for (int i = 0; i < mappedPoints.size(); i++) {
-        int idx = mappedPoints[i]->idxMoving;
+        int idx = mappedPoints[i]->idxMoving[0];
         PointType fPoint;
         movingPointSet->GetPoint(idx, &fPoint);
         PointType oPoint = transform->TransformPoint(fPoint);
@@ -792,6 +818,162 @@ int main(int argc, char *argv[]) {
       fclose(fp);
     }
   }
+
+  // create the final spreadsheet from resultJSON["lesions_fixed"] and resultJSON["lesions_moving"]
+  // walk through all the lesions in fixed and moving
+  std::vector<std::map<std::string, std::string>> csv;
+  for (int i = 0; i < resultJSON["lesions_fixed"].size(); i++) {
+    std::map<std::string, std::string> row;
+    row.insert(std::pair<std::string, std::string>("PatientID", PatientID));
+    row.insert(std::pair<std::string, std::string>("filename", fixed));
+    row.insert(std::pair<std::string, std::string>("lesion_id", std::to_string(i)));
+    row.insert(std::pair<std::string, std::string>("lesion_id_source", "t0"));
+    std::string prefix = "lesion_";
+    for (const auto &it : resultJSON["lesions_fixed"][i].items()) {
+      for (const auto &val : it.value().items()) {
+        std::string str_val;
+        std::ostringstream oss;
+        oss << val.value();
+        str_val = oss.str();
+        if (strlen(val.key().c_str()) == 0) {
+          row.insert(std::pair<std::string, std::string>(prefix + it.key(), str_val));
+        } else {
+          row.insert(std::pair<std::string, std::string>(prefix + it.key() + "_" + val.key(), str_val));
+        }
+      }
+    }
+    // does this lesion map to another?
+    //  std::vector<MatchInfo *> newPoints;
+    bool in_mapped = false;
+    int idxMappedTo = -1;
+    for (int j = 0; j < mappedPoints.size(); j++) {
+      if (mappedPoints[j]->idxFixed[0] == i) {
+        in_mapped = true;
+        idxMappedTo = mappedPoints[j]->idxMoving[0];
+      }
+    }
+    if (in_mapped) {
+      row.insert(std::pair<std::string, std::string>(prefix + "mapped_to_id", std::to_string(idxMappedTo)));
+      // if they map we would like to know about the volume increase between the two (i, idxMappedTo)
+      json b = resultJSON["lesions_fixed"][i]["physical_size"];
+      double physical_size_1 = 0.0f;
+      for (const auto &val : b.items()) {
+        std::string str_val;
+        std::ostringstream oss;
+        oss << val.value();
+        str_val = oss.str();
+        physical_size_1 = atof(str_val.c_str());
+      }
+      double physical_size_2 = 0.0f;
+      b = resultJSON["lesions_moving"][idxMappedTo]["physical_size"];
+      for (const auto &val : b.items()) {
+        std::string str_val;
+        std::ostringstream oss;
+        oss << val.value();
+        str_val = oss.str();
+        physical_size_2 = atof(str_val.c_str());
+      }
+      double change = 0.0f;
+      if (physical_size_1 > 0)
+        change = physical_size_2 / physical_size_1;
+      row.insert(std::pair<std::string, std::string>(prefix + "relative_size_change", std::to_string(change)));
+    } else {
+      row.insert(std::pair<std::string, std::string>(prefix + "mapped_to_id", "")); // if not its an orphan
+    }
+    // does this lesion merge with another
+    //    std::vector<MatchInfo *> mergedPoints; // points that merge together from fixed (t=0) into moving (t=1)
+    idxMappedTo = -1;
+    for (int j = 0; j < mergedPoints.size(); j++) {
+      for (int k = 0; k < mergedPoints[j]->idxFixed.size(); k++) {
+        if (mergedPoints[j]->idxFixed[k] == i) {
+          row.insert(std::pair<std::string, std::string>(prefix + "merged_to", std::to_string(mergedPoints[j]->idxMoving[0]))); // if not its an orphan
+        }
+      }
+    }
+
+    bool is_missing = false;
+    for (int j = 0; j < missingPoints.size(); j++) {
+      if (missingPoints[j]->idxFixed[0] == i) {
+        row.insert(std::pair<std::string, std::string>(prefix + "removed_point", "yes"));
+        is_missing = true;
+      }
+    }
+    if (!is_missing) {
+      row.insert(std::pair<std::string, std::string>(prefix + "removed_point", "no"));
+    }
+
+    csv.push_back(row);
+  }
+  for (int i = 0; i < resultJSON["lesions_moving"].size(); i++) {
+    std::map<std::string, std::string> row;
+    row.insert(std::pair<std::string, std::string>("PatientID", PatientID));
+    row.insert(std::pair<std::string, std::string>("filename", fixed));
+    row.insert(std::pair<std::string, std::string>("lesion_id", std::to_string(i)));
+    row.insert(std::pair<std::string, std::string>("lesion_id_source", "t1"));
+    std::string prefix = "lesion_";
+    for (const auto &it : resultJSON["lesions_moving"][i].items()) {
+      for (const auto &val : it.value().items()) {
+        std::string str_val;
+        std::ostringstream oss;
+        oss << val.value();
+        str_val = oss.str();
+        if (strlen(val.key().c_str()) == 0) {
+          row.insert(std::pair<std::string, std::string>(prefix + it.key(), str_val));
+        } else {
+          row.insert(std::pair<std::string, std::string>(prefix + it.key() + "_" + val.key(), str_val));
+        }
+      }
+    }
+    //  std::vector<MatchInfo *> missingPoints;  points that don't have a matching entry in moving
+    bool is_new = false;
+    for (int j = 0; j < newPoints.size(); j++) {
+      if (newPoints[j]->idxMoving[0] == i) {
+        row.insert(std::pair<std::string, std::string>(prefix + "new_point", "yes"));
+        is_new = true;
+      }
+    }
+    if (!is_new) {
+      row.insert(std::pair<std::string, std::string>(prefix + "new_point", "no"));
+    }
+
+    csv.push_back(row);
+  }
+
+  // print out the table
+  std::set<std::string> allKeys;
+  for (int i = 0; i < csv.size(); i++) {
+    std::map<std::string, std::string>::iterator it = csv[i].begin();
+    while (it != csv[i].end()) {
+      allKeys.insert(it->first);
+      ++it;
+    }
+  }
+  std::string out_file = outdir + "/stats.csv";
+  FILE *fp = fopen(out_file.c_str(), "w");
+  std::vector<std::string> header;
+  header.assign(allKeys.begin(), allKeys.end());
+  std::sort(header.begin(), header.end());
+  for (int i = 0; i < header.size(); i++) {
+    fprintf(fp, "%s", header[i].c_str());
+    if (i < header.size() - 1) {
+      fprintf(fp, ", ");
+    }
+  }
+  fprintf(fp, "\n");
+  for (int i = 0; i < csv.size(); i++) {
+    for (int j = 0; j < header.size(); j++) {
+      std::string val = "";
+      std::map<std::string, std::string>::iterator it = csv[i].find(header[j]);
+      if (it != csv[i].end()) {
+        val = it->second;
+      }
+      fprintf(fp, "%s", val.c_str());
+      if (j < header.size() - 1)
+        fprintf(fp, ", ");
+    }
+    fprintf(fp, "\n");
+  }
+  fclose(fp);
 
   return EXIT_SUCCESS;
 }
