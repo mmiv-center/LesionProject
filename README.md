@@ -85,3 +85,15 @@ For lesions that are close to the border of white matter the interpolation might
 In order to quantify the location of a lesion relative to the cortical surface an approach can be used that calculates curvilinear (geodesic) distances between two labels, the ventricles located in the center of the brain and the cortical gray to white matter surface. This approach mimics the general direction of the path neurons travel during cortex development.
 
 Please visit the https://github.com/mmiv-center/HeatEquation project that implements such a method.
+
+## Lesion matching over time
+
+To match two lesion segmented volumes the "MatchPair" function can be used:
+```
+./MatchPair abc/20161111/location_labeled_lesions.nii.gz \
+            abc/20171104/location_labeled_lesions.nii.gz abc/output/ \
+            -i abc
+```
+The program will calculate the connected components in both volumes and register the point clouds of found lesion centroids with each other. This is a crude way of performing a registration of the two time points and works only if there are sufficient number of lesions found. A table (csv) is created with all shape measures and classes for "new lesion", "deleted lesion", and "mapped lesion" as well as ratio of volume change between matching lesions. 
+
+The '-i' option is used to add a column PatientID to the output CSV so each file can be trivially merged across patients.

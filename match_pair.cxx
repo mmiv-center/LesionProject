@@ -829,6 +829,7 @@ int main(int argc, char *argv[]) {
     row.insert(std::pair<std::string, std::string>("lesion_id", std::to_string(i)));
     row.insert(std::pair<std::string, std::string>("lesion_id_source", "t0"));
     std::string prefix = "lesion_";
+    std::string type = "";
     for (const auto &it : resultJSON["lesions_fixed"][i].items()) {
       for (const auto &val : it.value().items()) {
         std::string str_val;
@@ -877,6 +878,7 @@ int main(int argc, char *argv[]) {
       if (physical_size_1 > 0)
         change = physical_size_2 / physical_size_1;
       row.insert(std::pair<std::string, std::string>(prefix + "relative_size_change", std::to_string(change)));
+      type = "mapped";
     } else {
       row.insert(std::pair<std::string, std::string>(prefix + "mapped_to_id", "")); // if not its an orphan
     }
@@ -895,12 +897,14 @@ int main(int argc, char *argv[]) {
     for (int j = 0; j < missingPoints.size(); j++) {
       if (missingPoints[j]->idxFixed[0] == i) {
         row.insert(std::pair<std::string, std::string>(prefix + "removed_point", "yes"));
+        type = "missing";
         is_missing = true;
       }
     }
     if (!is_missing) {
       row.insert(std::pair<std::string, std::string>(prefix + "removed_point", "no"));
     }
+    row.insert(std::pair<std::string, std::string>(prefix + "type", type));
 
     csv.push_back(row);
   }
@@ -911,6 +915,7 @@ int main(int argc, char *argv[]) {
     row.insert(std::pair<std::string, std::string>("lesion_id", std::to_string(i)));
     row.insert(std::pair<std::string, std::string>("lesion_id_source", "t1"));
     std::string prefix = "lesion_";
+    std::string type = "";
     for (const auto &it : resultJSON["lesions_moving"][i].items()) {
       for (const auto &val : it.value().items()) {
         std::string str_val;
@@ -930,11 +935,13 @@ int main(int argc, char *argv[]) {
       if (newPoints[j]->idxMoving[0] == i) {
         row.insert(std::pair<std::string, std::string>(prefix + "new_point", "yes"));
         is_new = true;
+        type = "new";
       }
     }
     if (!is_new) {
       row.insert(std::pair<std::string, std::string>(prefix + "new_point", "no"));
     }
+    row.insert(std::pair<std::string, std::string>(prefix + "type", type));
 
     csv.push_back(row);
   }
