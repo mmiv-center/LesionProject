@@ -227,6 +227,7 @@ int main(int argc, char *argv[]) {
   LabelType::Pointer label = LabelType::New();
   label->SetInput(connected->GetOutput());
   label->SetComputePerimeter(true);
+  label->SetComputeFeretDiameter(true);
   label->Update();
 
   LabelMapType *labelMap = label->GetOutput();
