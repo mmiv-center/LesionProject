@@ -1220,6 +1220,30 @@ int main(int argc, char *argv[]) {
   json erg = robustAnalysis(repr2relativeSizeChange);
   resultJSON["relative_size_change_by_representative_input_value"] = erg;
 
+  std::map<int, std::vector<double>> repr2physicalSizeChange = groupBy(csv, "lesion_representative_input_value", "lesion_physical_size");
+  erg = robustAnalysis(repr2physicalSizeChange);
+  resultJSON["physical_size_change_by_representative_input_value"] = erg;
+
+  std::map<int, std::vector<double>> repr2roundnessChange = groupBy(csv, "lesion_representative_input_value", "lesion_roundness");
+  erg = robustAnalysis(repr2roundnessChange);
+  resultJSON["roundness_change_by_representative_input_value"] = erg;
+
+  std::map<int, std::vector<double>> repr2flatnessChange = groupBy(csv, "lesion_representative_input_value", "lesion_flatness");
+  erg = robustAnalysis(repr2flatnessChange);
+  resultJSON["flatness_change_by_representative_input_value"] = erg;
+
+  std::map<int, std::vector<double>> repr2elongationChange = groupBy(csv, "lesion_representative_input_value", "lesion_elongation");
+  erg = robustAnalysis(repr2elongationChange);
+  resultJSON["elongation_change_by_representative_input_value"] = erg;
+
+  std::map<int, std::vector<double>> repr2perimeterChange = groupBy(csv, "lesion_representative_input_value", "lesion_perimeter");
+  erg = robustAnalysis(repr2perimeterChange);
+  resultJSON["perimeter_change_by_representative_input_value"] = erg;
+
+  std::map<int, std::vector<double>> repr2feretDiameterChange = groupBy(csv, "lesion_representative_input_value", "lesion_feret_diameter");
+  erg = robustAnalysis(repr2feretDiameterChange);
+  resultJSON["feret_diameter_change_by_representative_input_value"] = erg;
+
   std::ostringstream o;
   std::string si(outdir + "/summary");
   si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
