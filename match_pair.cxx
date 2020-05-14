@@ -78,6 +78,12 @@
 #include <math.h>
 #include <set>
 
+// for lesions from icometrix we have
+// periventricular (2)
+// juxtacortical (3)
+// Infratentorial
+// Deep white matter lesions
+
 using json = nlohmann::json;
 using namespace boost::filesystem;
 
@@ -120,6 +126,107 @@ template <typename TValue> TValue Convert(std::string optionString) {
   return value;
 }
 
+void replaceAll(std::string &s, const std::string &search, const std::string &replace) {
+  for (size_t pos = 0;; pos += replace.length()) {
+    // Locate the substring to replace
+    pos = s.find(search, pos);
+    if (pos == std::string::npos)
+      break;
+    // Replace by erasing and inserting
+    s.erase(pos, search.length());
+    s.insert(pos, replace);
+  }
+}
+
+json robustAnalysis(std::map<int, std::vector<double>> change) {
+  json res;
+  std::map<int, std::vector<double>>::iterator it_map = change.begin();
+  while (it_map != change.end()) {
+    int key = it_map->first;
+    double mean = 0.0f;
+    for (int i = 0; i < it_map->second.size(); i++) {
+      mean += it_map->second[i];
+    }
+    if (it_map->second.size() > 0)
+      mean /= it_map->second.size();
+    double std = 0.0f;
+    for (int i = 0; i < it_map->second.size(); i++) {
+      std += (it_map->second[i] - mean) * (it_map->second[i] - mean);
+    }
+    if (it_map->second.size() > 1)
+      std = sqrt(std / (it_map->second.size() - 1));
+
+    // we should do a robust mean here, sometimes we end up with very large values...
+    // so we don't use entries that are larger than 3 std away from mean
+    double robust_mean = 0.0f;
+    int robust_n = 0;
+    double robust_std = 0.0f;
+    for (int i = 0; i < it_map->second.size(); i++) {
+      if (fabs(it_map->second[i] - mean) <= 1.959964 * std) { // value from https://en.wikipedia.org/wiki/Standard_deviation for 1/20 95%
+        robust_mean += it_map->second[i];
+        robust_n++;
+      }
+    }
+    if (robust_n > 0)
+      robust_mean /= robust_n;
+    for (int i = 0; i < it_map->second.size(); i++) {
+      if (fabs(it_map->second[i] - mean) <= 3 * std) {
+        robust_std += (it_map->second[i] - robust_mean) * (it_map->second[i] - robust_mean);
+      }
+    }
+    if (robust_n > 1) {
+      robust_std = sqrt(robust_std / (robust_n - 1));
+    }
+
+    json entry;
+    entry["mean"] = mean;
+    entry["n"] = it_map->second.size();
+    entry["std"] = std;
+    entry["robust_mean"] = robust_mean;
+    entry["robust_n"] = robust_n;
+    entry["robust_std"] = robust_std;
+    res[std::to_string(key)] = entry;
+    ++it_map;
+  }
+  return res;
+}
+
+std::map<int, std::vector<double>> groupBy(std::vector<std::map<std::string, std::string>> csv, std::string group, std::string measure) {
+  std::map<int, std::vector<double>> repr2relativeSizeChange;
+  for (int i = 0; i < csv.size(); i++) {
+    std::string val = "";
+    std::string val2 = "";
+    std::map<std::string, std::string>::iterator it = csv[i].find(measure);
+    if (it != csv[i].end()) {
+      val = it->second;
+    }
+    std::map<std::string, std::string>::iterator it2 = csv[i].find(group);
+    if (it2 != csv[i].end()) {
+      val2 = it2->second;
+      if (val2 == std::string(""))
+        continue;
+      int k = std::stoi(val2);
+      // fprintf(stdout, "key is: %d for \"%s\"\n", k, val2.c_str());
+      std::map<int, std::vector<double>>::iterator it3 = repr2relativeSizeChange.find(k);
+      if (it3 == repr2relativeSizeChange.end()) {
+        // fprintf(stdout, "Add a map key for : %d\n", k);
+        repr2relativeSizeChange.insert({k, std::vector<double>()});
+      }
+      if (val != std::string("")) {
+        // fprintf(stdout, "val as float is: %f\n", std::stof(val));
+        // add the value to that entry
+        std::map<int, std::vector<double>>::iterator it4 = repr2relativeSizeChange.find(k);
+        if (it4 != repr2relativeSizeChange.end()) {
+          std::vector<double> old = it4->second;
+          old.push_back(std::stof(val));
+          it4->second = old;
+        }
+      }
+    }
+  }
+  return repr2relativeSizeChange;
+}
+
 json resultJSON;
 
 int main(int argc, char *argv[]) {
@@ -128,10 +235,10 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetDescription("Match a pair of labels.");
-  command.AddField("fixed", "Input mask fixed", MetaCommand::STRING, true);
-  command.AddField("moving", "Input mask moving", MetaCommand::STRING, true);
-  command.AddField("outdir", "Output masks directory", MetaCommand::STRING, true);
+  command.SetDescription("Match pairs of lesions. This program requires already segmented lesions in two input volumes.");
+  command.AddField("fixed", "Input lesion mask for fixed volume (t0)", MetaCommand::STRING, true);
+  command.AddField("moving", "Input lesion mask moving volume (t1)", MetaCommand::STRING, true);
+  command.AddField("outdir", "Output directory", MetaCommand::STRING, true);
 
   command.SetOption("Threshold", "t", false, "Specify the threshold applied to the input to create a mask (0.00001).");
   command.AddOptionField("Threshold", "threshold", MetaCommand::FLOAT, true);
@@ -143,6 +250,8 @@ int main(int argc, char *argv[]) {
   command.AddOptionField("PatientID", "patientid", MetaCommand::STRING, true);
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
+
+  command.SetOption("exportIndividualLables", "e", false, "Export individual label files for each lesion.");
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -164,7 +273,7 @@ int main(int argc, char *argv[]) {
   std::string PatientID = "";
   if (command.GetOptionWasSet("PatientID")) {
     PatientID = command.GetValueAsString("PatientID", "patientid");
-    fprintf(stdout, "got a patient id %s\n", PatientID.c_str());
+    // fprintf(stdout, "got a patient id %s\n", PatientID.c_str());
   }
 
   int minPixel = 1;
@@ -179,6 +288,10 @@ int main(int argc, char *argv[]) {
   if (command.GetOptionWasSet("Verbose"))
     verbose = true;
 
+  bool exportIndividualLabels = false;
+  if (command.GetOptionWasSet("exportIndividualLabels"))
+    exportIndividualLabels = true;
+
   // store information in the result json file
   resultJSON["command_line"] = json::array();
   for (int i = 0; i < argc; i++) {
@@ -186,6 +299,8 @@ int main(int argc, char *argv[]) {
   }
   path p(fixed);
   std::string fn = p.filename().string();
+
+  replaceAll(fn, ".nii.gz", ".nii"); // pretend we have gunziped here already
   size_t lastdot = fn.find_last_of(".");
   std::string output_filename_fixed;
   if (lastdot == std::string::npos)
@@ -263,6 +378,16 @@ int main(int argc, char *argv[]) {
   conMoving->SetSpacing(imageReaderMoving->GetOutput()->GetSpacing());
   conMoving->SetDirection(imageReaderMoving->GetOutput()->GetDirection());
 
+  // create a data dictionary for all values
+  std::map<std::string, std::string> data_dictionary;
+
+  // create outdir if it does not exist already
+  path p_outdir(outdir);
+  if (!is_directory(p_outdir)) {
+    fprintf(stdout, "Create output directory...");
+    create_directories(p_outdir);
+  }
+
   if (1) { // save the connected components image as a single volume
     typedef itk::ImageFileWriter<OutputImageType> WriterType;
     WriterType::Pointer writer = WriterType::New();
@@ -306,11 +431,13 @@ int main(int argc, char *argv[]) {
   LabelType::Pointer labelFixed = LabelType::New();
   labelFixed->SetInput(connectedFixed->GetOutput());
   labelFixed->SetComputePerimeter(true);
+  labelFixed->SetComputeFeretDiameter(true);
   labelFixed->Update();
 
   LabelType::Pointer labelMoving = LabelType::New();
   labelMoving->SetInput(connectedMoving->GetOutput());
   labelMoving->SetComputePerimeter(true);
+  labelMoving->SetComputeFeretDiameter(true);
   labelMoving->Update();
 
   LabelMapType *labelMapFixed = labelFixed->GetOutput();
@@ -362,20 +489,45 @@ int main(int argc, char *argv[]) {
     // labelObject->GetNumberOfPixels()
     json lesion;
     lesion["id"] = counter;
-    lesion["input_value"] = labelObject->GetLabel();
+    std::string prefix = "lesion_";
+    data_dictionary.insert({prefix + "id", "Index of the lesion object. Starts counting with 0."});
+    lesion["connected_component_value"] = labelObject->GetLabel();
+    data_dictionary.insert({prefix + "connected_component_value", "Each detected connected component has an index. Counting starts with 1."});
     lesion["num_voxel"] = labelObject->GetNumberOfPixels();
+    data_dictionary.insert({prefix + "num_voxel", "Number of voxel that are part of this lesion."});
     lesion["physical_size"] = labelObject->GetPhysicalSize();
+    data_dictionary.insert(
+        {prefix + "physical_size",
+         "PhysicalSize is the size of the object in physical units. It is equal to the NumberOfPixels multiplied by the physical pixel size."});
     lesion["flatness"] = labelObject->GetFlatness();
+    data_dictionary.insert({prefix + "flatness", "A volumetric shape attribute computed by itk."});
+    lesion["equivalent_radius"] = labelObject->GetEquivalentSphericalRadius();
+    data_dictionary.insert(
+        {prefix + "equivalent_radius",
+         "EquivalentRadius is the equivalent radius of the hypersphere of the same size than the label object. The value depends on the image spacing."});
     lesion["roundness"] = labelObject->GetRoundness();
+    data_dictionary.insert({prefix + "roundness", "A volumetric shape attribute computed by itk."});
     lesion["perimeter"] = labelObject->GetPerimeter();
+    data_dictionary.insert({prefix + "perimeter", "A volumetric shape attribute computed by itk."});
     lesion["elongation"] = labelObject->GetElongation();
+    data_dictionary.insert(
+        {prefix + "elongation",
+         "Elongation is the  ratio of the largest principal moment to the second largest principal moment. Its value is greater or equal to 1."});
     lesion["number_pixel_on_border"] = labelObject->GetNumberOfPixelsOnBorder();
+    data_dictionary.insert({prefix + "number_pixel_on_border",
+                            "NumberOfPixelsOnBorder is the number of pixels in the objects which are on the border of the image. A pixel on several borders (a "
+                            "pixel in a corner) is counted only one time, so the size on border can't be greater than the size of the object. This attribute "
+                            "is particularly useful to remove the objects which are touching too much the border."});
     lesion["feret_diameter"] = labelObject->GetFeretDiameter();
+    data_dictionary.insert({prefix + "feret_diameter", "FeretDiameter is the diameter in physical units of the sphere which includes all the objects voxel."});
     lesion["perimeter_on_border_ratio"] = labelObject->GetPerimeterOnBorderRatio();
+    data_dictionary.insert({prefix + "perimeter_on_border_ratio", "A volumetric shape attribute computed by itk."});
     lesion["centroid"] = json::array();
     lesion["centroid"].push_back(labelObject->GetCentroid()[0]);
     lesion["centroid"].push_back(labelObject->GetCentroid()[1]);
     lesion["centroid"].push_back(labelObject->GetCentroid()[2]);
+    data_dictionary.insert({prefix + "centroid", "Location of center of mass for this lesion in bounding box coordinates. It is not constrained to be in the "
+                                                 "object, and thus can be outside if the object is not convex."});
     PointType fPoint;
     fPoint[0] = labelObject->GetCentroid()[0];
     fPoint[1] = labelObject->GetCentroid()[1];
@@ -383,10 +535,18 @@ int main(int argc, char *argv[]) {
     fixedPointContainer->InsertElement(n, fPoint);
 
     lesion["principal_moments"] = json::array();
-    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[0]);
-    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[1]);
     lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[2]);
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[1]);
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[0]);
+    data_dictionary.insert({prefix + "principal_moments", "The sorted principal moments of the shape."});
     lesion["equivalent_spherical_radius"] = labelObject->GetEquivalentSphericalRadius();
+    data_dictionary.insert(
+        {prefix + "equivalent_spherical_radius",
+         "EquivalentRadius is the equivalent radius of the hypersphere of the same size than the label object. The value depends on the image spacing."});
+    lesion["equivalent_spherical_perimeter"] = labelObject->GetEquivalentSphericalPerimeter();
+    data_dictionary.insert(
+        {prefix + "equivalent_spherical_perimeter",
+         "EquivalentPerimeter is the equivalent perimeter of the hypersphere of the same size than the label object. The value depends on the image spacing."});
     totalVolume += labelObject->GetNumberOfPixels();
 
     ImageType::RegionType region = connectedFixed->GetOutput()->GetLargestPossibleRegion();
@@ -401,15 +561,25 @@ int main(int argc, char *argv[]) {
     mask->SetDirection(imageReaderFixed->GetOutput()->GetDirection());
     itk::ImageRegionIterator<OutputImageType> imageIterator(connectedFixed->GetOutput(), region);
     itk::ImageRegionIterator<OutputMaskType> maskIterator(mask, region);
+    itk::ImageRegionIterator<ImageType> inputIterator(imageReaderFixed->GetOutput(), region);
+    float representative_value = 0;
     while (!imageIterator.IsAtEnd() && !maskIterator.IsAtEnd()) {
       if (imageIterator.Get() == labelObject->GetLabel()) {
         maskIterator.Set(1);
+        // remember a representative value from the input for a pixel inside that lesion
+        // this would be the type of lesion if we use a label field as input
+        representative_value = inputIterator.Get();
       }
       ++imageIterator;
       ++maskIterator;
+      ++inputIterator;
     }
+    lesion["representative_input_value"] = representative_value;
+    data_dictionary.insert(
+        {prefix + "representative_input_value",
+         "Contains a value for this lesion from the input file. If the input file contains types of lesions this value will correspond to those types."});
     // and safe that volume now
-    if (1) { // save the connected components image as a single volume
+    if (exportIndividualLabels) { // save the connected components image as a single volume
       typedef itk::ImageFileWriter<OutputMaskType> WriterType;
       WriterType::Pointer writer = WriterType::New();
       // check if that directory exists, create before writing
@@ -451,7 +621,7 @@ int main(int argc, char *argv[]) {
     // labelObject->GetNumberOfPixels()
     json lesion;
     lesion["id"] = counter;
-    lesion["input_value"] = labelObject->GetLabel();
+    lesion["connected_component_value"] = labelObject->GetLabel();
     lesion["num_voxel"] = labelObject->GetNumberOfPixels();
     lesion["physical_size"] = labelObject->GetPhysicalSize();
     lesion["flatness"] = labelObject->GetFlatness();
@@ -461,6 +631,7 @@ int main(int argc, char *argv[]) {
     lesion["number_pixel_on_border"] = labelObject->GetNumberOfPixelsOnBorder();
     lesion["feret_diameter"] = labelObject->GetFeretDiameter();
     lesion["perimeter_on_border_ratio"] = labelObject->GetPerimeterOnBorderRatio();
+    lesion["equivalent_radius"] = labelObject->GetEquivalentSphericalRadius();
     lesion["centroid"] = json::array();
     lesion["centroid"].push_back(labelObject->GetCentroid()[0]);
     lesion["centroid"].push_back(labelObject->GetCentroid()[1]);
@@ -472,10 +643,11 @@ int main(int argc, char *argv[]) {
     movingPointContainer->InsertElement(n, fPoint);
 
     lesion["principal_moments"] = json::array();
-    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[0]);
-    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[1]);
     lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[2]);
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[1]);
+    lesion["principal_moments"].push_back(labelObject->GetPrincipalMoments()[0]);
     lesion["equivalent_spherical_radius"] = labelObject->GetEquivalentSphericalRadius();
+    lesion["equivalent_spherical_perimeter"] = labelObject->GetEquivalentSphericalPerimeter();
     totalVolume += labelObject->GetNumberOfPixels();
 
     ImageType::RegionType region = connectedMoving->GetOutput()->GetLargestPossibleRegion();
@@ -490,15 +662,21 @@ int main(int argc, char *argv[]) {
     mask->SetDirection(imageReaderMoving->GetOutput()->GetDirection());
     itk::ImageRegionIterator<OutputImageType> imageIterator(connectedMoving->GetOutput(), region);
     itk::ImageRegionIterator<OutputMaskType> maskIterator(mask, region);
+    itk::ImageRegionIterator<ImageType> inputIterator(imageReaderMoving->GetOutput(), region);
+    float representative_value = 0;
     while (!imageIterator.IsAtEnd() && !maskIterator.IsAtEnd()) {
       if (imageIterator.Get() == labelObject->GetLabel()) {
         maskIterator.Set(1);
+        representative_value = inputIterator.Get();
       }
       ++imageIterator;
       ++maskIterator;
+      ++inputIterator;
     }
+    lesion["representative_input_value"] = representative_value;
+
     // and safe that volume now
-    if (1) { // save the connected components image as a single volume
+    if (exportIndividualLabels) { // save the connected components image as a single volume
       typedef itk::ImageFileWriter<OutputMaskType> WriterType;
       WriterType::Pointer writer = WriterType::New();
       // check if that directory exists, create before writing
@@ -530,26 +708,6 @@ int main(int argc, char *argv[]) {
   }
   resultJSON["num_lesions_moving"] = counter;
   resultJSON["total_lesion_size_moving"] = totalVolume;
-
-  std::ostringstream o;
-  std::string si(resultJSON["output_labels_fixed"]);
-  si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
-  lastdot = si.find_last_of(".");
-  if (lastdot == std::string::npos)
-    si = si + ".json";
-  else
-    si = si.substr(0, lastdot) + ".json";
-
-  o << si;
-  resultJSON["z_comment"] =
-      std::string("jq -r '.lesions | map(.filename), map(.id), map(.num_voxel), map(.flatness), map(.roundness), map(.elongation) | @csv' ") + o.str();
-
-  std::ofstream out(o.str());
-  std::string res = resultJSON.dump(4) + "\n";
-  out << res;
-  out.close();
-
-  fprintf(stdout, "%s", res.c_str());
 
   // we have now 2 point clouds with many features that we want to
   // a) align
@@ -606,7 +764,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
   // std::cout << "Solution = " << registration->GetTransform()->GetParameters() << std::endl;
-  std::cout << "Solution = " << transform->GetParameters() << std::endl;
+  std::cout << "PointCloud transform = " << transform->GetParameters() << std::endl;
 
   // ok, if the two point clouds are sufficiently close now we can try to match closest pairs
   // this should be done to get a globally consistent solution - if two points are matched
@@ -682,7 +840,7 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < fixedPointSet->GetNumberOfPoints(); i++) {
     PointType fPoint;
     fixedPointSet->GetPoint(i, &fPoint);
-    double closestDist = 100000.0f;
+    double closestDist = std::numeric_limits<double>::max();
     int closestIdx = -1;
     for (int j = 0; j < movingPointSet->GetNumberOfPoints(); j++) {
       PointType f2Point;
@@ -828,7 +986,12 @@ int main(int argc, char *argv[]) {
     row.insert(std::pair<std::string, std::string>("filename", fixed));
     row.insert(std::pair<std::string, std::string>("lesion_id", std::to_string(i)));
     row.insert(std::pair<std::string, std::string>("lesion_id_source", "t0"));
+    data_dictionary.insert({"PatientID", "Specified on the command line of MatchPairs and should correspond to the patient identifier."});
+    data_dictionary.insert(
+        {"filename", "The filename of the label file used as input. Should be the filename of the baseline timepoint (t0) or the followup timepoint (t1)."});
     std::string prefix = "lesion_";
+    data_dictionary.insert({"lesion_id", "An id for each lesion. Counting starts with 0."});
+    data_dictionary.insert({"lesion_id_source", "Identifies the origin of this lesion. Either t0 (first argument) or t1 (second argument)."});
     std::string type = "";
     for (const auto &it : resultJSON["lesions_fixed"][i].items()) {
       for (const auto &val : it.value().items()) {
@@ -855,6 +1018,7 @@ int main(int argc, char *argv[]) {
     }
     if (in_mapped) {
       row.insert(std::pair<std::string, std::string>(prefix + "mapped_to_id", std::to_string(idxMappedTo)));
+      data_dictionary.insert({prefix + "mapped_to_id", "If a mapped id in the other volume is found after registration this is the id of that lesion."});
       // if they map we would like to know about the volume increase between the two (i, idxMappedTo)
       json b = resultJSON["lesions_fixed"][i]["physical_size"];
       double physical_size_1 = 0.0f;
@@ -879,6 +1043,9 @@ int main(int argc, char *argv[]) {
         change = physical_size_2 / physical_size_1;
       row.insert(std::pair<std::string, std::string>(prefix + "relative_size_change", std::to_string(change)));
       type = "mapped";
+      data_dictionary.insert({prefix + "relative_size_change",
+                              "The physical size of the lesion (number of voxel) at t1 divided by the size of the lesion at t0. Values larger "
+                              "than 1 indicate volume increase. Values smaller than 0 indicate that a lesion is shrinking from t0 to t1."});
     } else {
       row.insert(std::pair<std::string, std::string>(prefix + "mapped_to_id", "")); // if not its an orphan
     }
@@ -892,19 +1059,44 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+    data_dictionary.insert({prefix + "merged_to", "If two or more lesions in t0 are mapped to the same lesion in t1 they could as merged lesions. This column "
+                                                  "contains the id of the target lesion in t1."});
 
     bool is_missing = false;
     for (int j = 0; j < missingPoints.size(); j++) {
       if (missingPoints[j]->idxFixed[0] == i) {
         row.insert(std::pair<std::string, std::string>(prefix + "removed_point", "yes"));
-        type = "missing";
+        type = "missing_in_t1";
         is_missing = true;
       }
     }
     if (!is_missing) {
       row.insert(std::pair<std::string, std::string>(prefix + "removed_point", "no"));
     }
+    data_dictionary.insert({prefix + "removed_point",
+                            "If a lesion in t0 does not have a corresponding lesion in t1 it counts as removed. This value will be yes for such a lesion."});
     row.insert(std::pair<std::string, std::string>(prefix + "type", type));
+    data_dictionary.insert({prefix + "type", "The type of a lesion can be mapped, missing_in_t1, or new."});
+    row.insert(std::pair<std::string, std::string>(prefix + "num_lesions", std::to_string(resultJSON["lesions_fixed"].size())));
+    data_dictionary.insert({prefix + "num_lesions", "The number of lesions in this volume. This is a constant value for all lesion entries."});
+    row.insert(std::pair<std::string, std::string>(prefix + "num_mapped", std::to_string(mappedPoints.size())));
+    data_dictionary.insert({prefix + "num_mapped", "The number of mapped lesions in this volume. This is a constant value for all lesion entries."});
+    row.insert(std::pair<std::string, std::string>(prefix + "num_missing", std::to_string(missingPoints.size())));
+    data_dictionary.insert({prefix + "num_missing", "The number of missing lesions in the t0 volume. This is a constant value for all lesion entries in t0."});
+    row.insert(std::pair<std::string, std::string>(prefix + "num_merged", std::to_string(mergedPoints.size())));
+    data_dictionary.insert(
+        {prefix + "num_merged",
+         "As lesions grow they might merge with neighbors. This entry is the total number of lesions in t0 that do not map to a unique lesion "
+         "in t1. The value is the same for all lesions in t0."});
+    for (const auto &it : resultJSON["total_lesion_size_fixed"]) {
+      std::string str_val;
+      std::ostringstream oss;
+      oss << it;
+      str_val = oss.str();
+      row.insert(std::pair<std::string, std::string>(prefix + "num_total_voxel", str_val));
+    }
+    data_dictionary.insert(
+        {prefix + "num_total_voxel", "The sum of all voxel in this volume that are part of a lesion. The value is repeated for all entries of the volume."});
 
     csv.push_back(row);
   }
@@ -915,7 +1107,7 @@ int main(int argc, char *argv[]) {
     row.insert(std::pair<std::string, std::string>("lesion_id", std::to_string(i)));
     row.insert(std::pair<std::string, std::string>("lesion_id_source", "t1"));
     std::string prefix = "lesion_";
-    std::string type = "";
+    std::string type = "mapped";
     for (const auto &it : resultJSON["lesions_moving"][i].items()) {
       for (const auto &val : it.value().items()) {
         std::string str_val;
@@ -942,6 +1134,26 @@ int main(int argc, char *argv[]) {
       row.insert(std::pair<std::string, std::string>(prefix + "new_point", "no"));
     }
     row.insert(std::pair<std::string, std::string>(prefix + "type", type));
+    row.insert(std::pair<std::string, std::string>(prefix + "num_lesions", std::to_string(resultJSON["lesions_moving"].size())));
+    for (const auto &it : resultJSON["total_lesion_size_moving"]) {
+      std::string str_val;
+      std::ostringstream oss;
+      oss << it;
+      str_val = oss.str();
+      row.insert(std::pair<std::string, std::string>(prefix + "num_total_voxel", str_val));
+    }
+    // add the mapped_to_id for this moving lesion
+    bool in_mapped = false;
+    int idxMappedTo = -1;
+    for (int j = 0; j < mappedPoints.size(); j++) {
+      if (mappedPoints[j]->idxMoving[0] == i) {
+        in_mapped = true;
+        idxMappedTo = mappedPoints[j]->idxFixed[0];
+      }
+    }
+    if (in_mapped) {
+      row.insert(std::pair<std::string, std::string>(prefix + "mapped_to_id", std::to_string(idxMappedTo)));
+    }
 
     csv.push_back(row);
   }
@@ -957,30 +1169,76 @@ int main(int argc, char *argv[]) {
   }
   std::string out_file = outdir + "/stats.csv";
   FILE *fp = fopen(out_file.c_str(), "w");
-  std::vector<std::string> header;
-  header.assign(allKeys.begin(), allKeys.end());
-  std::sort(header.begin(), header.end());
-  for (int i = 0; i < header.size(); i++) {
-    fprintf(fp, "%s", header[i].c_str());
-    if (i < header.size() - 1) {
-      fprintf(fp, ", ");
-    }
-  }
-  fprintf(fp, "\n");
-  for (int i = 0; i < csv.size(); i++) {
-    for (int j = 0; j < header.size(); j++) {
-      std::string val = "";
-      std::map<std::string, std::string>::iterator it = csv[i].find(header[j]);
-      if (it != csv[i].end()) {
-        val = it->second;
-      }
-      fprintf(fp, "%s", val.c_str());
-      if (j < header.size() - 1)
+  if (fp != NULL) {
+    std::vector<std::string> header;
+    header.assign(allKeys.begin(), allKeys.end());
+    std::sort(header.begin(), header.end());
+    for (int i = 0; i < header.size(); i++) {
+      fprintf(fp, "%s", header[i].c_str());
+      if (i < header.size() - 1) {
         fprintf(fp, ", ");
+      }
     }
     fprintf(fp, "\n");
+    for (int i = 0; i < csv.size(); i++) {
+      for (int j = 0; j < header.size(); j++) {
+        std::string val = "";
+        std::map<std::string, std::string>::iterator it = csv[i].find(header[j]);
+        if (it != csv[i].end()) {
+          val = it->second;
+        }
+        fprintf(fp, "%s", val.c_str());
+        if (j < header.size() - 1)
+          fprintf(fp, ",");
+      }
+      fprintf(fp, "\n");
+    }
+    fclose(fp);
   }
-  fclose(fp);
+
+  // write the data dictionary for stats.csv
+  out_file = outdir + "/stats_data_dictionary.csv";
+  fp = fopen(out_file.c_str(), "w");
+  if (fp != NULL) {
+    for (const auto &pair : data_dictionary) {
+      std::string key;
+      std::string value;
+      std::ostringstream oss_key;
+      oss_key << pair.first;
+      key = oss_key.str();
+      std::ostringstream oss_value;
+      oss_value << pair.second;
+      value = oss_value.str();
+      fprintf(fp, "\"%s\",\"%s\"\n", key.c_str(), value.c_str());
+    }
+    fclose(fp);
+  }
+
+  // it would be good to collect summary information based on representative_input_values field values
+  // for the relative size change (average value)
+  std::map<int, std::vector<double>> repr2relativeSizeChange = groupBy(csv, "lesion_representative_input_value", "lesion_relative_size_change");
+  json erg = robustAnalysis(repr2relativeSizeChange);
+  resultJSON["relative_size_change_by_representative_input_value"] = erg;
+
+  std::ostringstream o;
+  std::string si(outdir + "/summary");
+  si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
+  lastdot = si.find_last_of(".");
+  if (lastdot == std::string::npos)
+    si = si + ".json";
+  else
+    si = si.substr(0, lastdot) + ".json";
+
+  o << si;
+  // resultJSON["z_comment"] =
+  //    std::string("jq -r '.lesions | map(.filename), map(.id), map(.num_voxel), map(.flatness), map(.roundness), map(.elongation) | @csv' ") + o.str();
+
+  std::ofstream out(o.str());
+  std::string res = resultJSON.dump(4) + "\n";
+  out << res;
+  out.close();
+
+  fprintf(stdout, "%s", res.c_str());
 
   return EXIT_SUCCESS;
 }
